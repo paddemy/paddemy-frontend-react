@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Registrar Academia</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      background: #34495e; color: white; padding: 12px 20px;
+    }
+    header h2 { margin: 0; font-size: 1.2rem; }
+    .header-links { display: flex; align-items: center; gap: 20px; }
+    .header-links a { color: white; text-decoration: none; font-size: 0.9rem; }
+    .user-menu { position: relative; cursor: pointer; }
+    .user-name { display: flex; align-items: center; gap: 6px; }
+    .dropdown {
+      position: absolute; right: 0; top: 120%;
+      background: white; color: #333; border: 1px solid #ddd; border-radius: 4px;
+      min-width: 150px; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      display: none; flex-direction: column; z-index: 10;
+    }
+    .dropdown a { padding: 10px; text-decoration: none; color: #333; font-size: 0.9rem; }
+    .dropdown a:hover { background: #f0f0f0; }
+    .user-menu.open .dropdown { display: flex; }
+
+    main { padding: 20px; }
+    form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
+    input, button { padding: 10px; font-size: 1rem; }
+    button { cursor: pointer; }
+    .success { color: green; }
+    .error { color: red; }
+    .card { border: 1px solid #eee; border-radius: 8px; padding: 16px; }
+    .card h3 { margin-top: 0; }
+  </style>
+
+  <script>
+    const LOGIN_PAGE = './login.html';
+    const ADMIN_PAGE = './admin.html';
+
+    function isTokenValid(token) {
+      if (!token) return false;
+      const p = parseJwt(token);
+      if (!p || !p.exp) return true;
+      return p.exp * 1000 > Date.now();
+    }
+    function parseJwt(token) {
+      try { return JSON.parse(atob(token.split('.')[1])); } catch { return null; }
+    }
+
+    (function guard() {
+      const token = localStorage.getItem('token');
+      const email = localStorage.getItem('userEmail');
+
+      if (!isTokenValid(token) || email !== 'root@paddemy.com') {
+        localStorage.removeItem('token');
+        localStorage.removeItem('userEmail');
+        window.location.replace(LOGIN_PAGE + '?reason=required');
+      }
+    })();
+  </script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+  function RegisterAcademyPage() {
+    const [user, setUser] = React.useState(null);
+    const [menuOpen, setMenuOpen] = React.useState(false);
+    const [academy, setAcademy] = React.useState({ name: "", nif: "" });
+    const [message, setMessage] = React.useState("");
+
+    const token = React.useMemo(() => localStorage.getItem("token"), []);
+
+    function hardLogout() {
+      localStorage.removeItem("token");
+      localStorage.removeItem("userEmail");
+      window.location.replace("login.html?reason=required");
+    }
+
+    React.useEffect(() => {
+      const email = localStorage.getItem("userEmail");
+      setUser({ email });
+    }, []);
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      setMessage("");
+      try {
+        const res = await fetch("http://localhost:9090/academies", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(academy),
+        });
+        if (!res.ok) throw new Error("Error al registrar academia");
+        const data = await res.json();
+        setMessage(`✅ Academia registrada: ${data.name} (NIF: ${data.nif})`);
+        setAcademy({ name: "", nif: "" });
+      } catch (err) {
+        setMessage(`❌ ${err.message}`);
+      }
+    }
+
+    return (
+        <div>
+          <header>
+            <div className="header-links">
+              <h2>Registrar Academia</h2>
+              <a href="admin.html">Volver a Admin</a>
+            </div>
+            <div className={`user-menu ${menuOpen ? "open" : ""}`} onClick={() => setMenuOpen(!menuOpen)}>
+              <div className="user-name">
+                <span>{user ? user.email : "..."}</span>
+                <span>▾</span>
+              </div>
+              <div className="dropdown">
+                <a href="#" onClick={hardLogout}>Cerrar sesión</a>
+              </div>
+            </div>
+          </header>
+
+          <main>
+            <div className="card">
+              <h3>Registrar Academia</h3>
+              <form onSubmit={handleRegister}>
+                <input
+                    type="text"
+                    placeholder="Nombre de la academia"
+                    value={academy.name}
+                    onChange={e => setAcademy({ ...academy, name: e.target.value })}
+                    required
+                />
+                <input
+                    type="text"
+                    placeholder="NIF"
+                    value={academy.nif}
+                    onChange={e => setAcademy({ ...academy, nif: e.target.value })}
+                    required
+                />
+                <button type="submit">Registrar</button>
+              </form>
+              {message && (
+                  <p className={message.startsWith("✅") ? "success" : "error"}>{message}</p>
+              )}
+            </div>
+          </main>
+        </div>
+    );
+  }
+
+  const root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(<RegisterAcademyPage />);
+</script>
+</body>
+</html>

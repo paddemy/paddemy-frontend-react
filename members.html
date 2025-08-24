@@ -2,71 +2,48 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Members</title>
+  <title>Member Dashboard</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     body { font-family: system-ui, sans-serif; margin: 0; }
     header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #2c3e50;
-      color: white;
-      padding: 12px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      background: #2c3e50; color: white; padding: 12px 20px;
     }
-    header h2 {
-      margin: 0;
-      font-size: 1.2rem;
-      text-transform: capitalize;
-    }
-    .user-menu {
-      position: relative;
-      cursor: pointer;
-    }
-    .user-name {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
+    header h2 { margin: 0; font-size: 1.2rem; text-transform: capitalize; }
+    .user-menu { position: relative; cursor: pointer; }
+    .user-name { display: flex; align-items: center; gap: 6px; }
     .dropdown {
-      position: absolute;
-      right: 0;
-      top: 120%;
-      background: white;
-      color: #333;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      min-width: 150px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-      display: none;
-      flex-direction: column;
-      z-index: 10;
+      position: absolute; right: 0; top: 120%;
+      background: white; color: #333; border: 1px solid #ddd; border-radius: 4px;
+      min-width: 150px; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      display: none; flex-direction: column; z-index: 10;
     }
-    .dropdown a {
-      padding: 10px;
-      text-decoration: none;
-      color: #333;
-      font-size: 0.9rem;
-    }
-    .dropdown a:hover {
-      background: #f0f0f0;
-    }
-    .user-menu.open .dropdown {
-      display: flex;
-    }
+    .dropdown a { padding: 10px; text-decoration: none; color: #333; font-size: 0.9rem; }
+    .dropdown a:hover { background: #f0f0f0; }
+    .user-menu.open .dropdown { display: flex; }
 
     main { padding: 20px; }
     table { border-collapse: collapse; width: 100%; margin-top: 20px; }
     th, td { border: 1px solid #ddd; padding: 8px; }
     thead { background: #eee; }
     .error { color: #c00; }
+    .btn {
+      display: inline-block;
+      padding: 10px 15px;
+      background: #3498db;
+      color: white;
+      text-decoration: none;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
   </style>
 
-  <!-- Guard de sesión -->
   <script>
     const LOGIN_PAGE = './login.html';
+
     function parseJwt(token) {
       try { return JSON.parse(atob(token.split('.')[1])); } catch { return null; }
     }
@@ -76,13 +53,26 @@
       if (!p || !p.exp) return true;
       return p.exp * 1000 > Date.now();
     }
-    (function guardMembers() {
-      const t = localStorage.getItem('token');
-      if (!isTokenValid(t)) {
+
+    async function resolveCurrentUser(token) {
+      try {
+        const r = await fetch('http://localhost:9090/members/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (r.ok) return await r.json();
+      } catch {}
+      return null;
+    }
+
+    (async function guard() {
+      const token = localStorage.getItem('token');
+      const email = localStorage.getItem('userEmail');
+
+      if (!isTokenValid(token) || email === 'root@paddemy.com') {
         localStorage.removeItem('token');
-        const url = new URL(LOGIN_PAGE, window.location.href);
-        url.searchParams.set('reason', 'required');
-        window.location.replace(url.toString());
+        localStorage.removeItem('userEmail');
+        window.location.replace(LOGIN_PAGE + '?reason=required');
+        return;
       }
     })();
   </script>
@@ -102,6 +92,7 @@
 
     function hardLogout() {
       localStorage.removeItem('token');
+      localStorage.removeItem('userEmail');
       const url = new URL('./login.html', window.location.href);
       url.searchParams.set('reason', 'required');
       window.location.replace(url.toString());
@@ -109,23 +100,12 @@
 
     React.useEffect(() => {
       let abort = false;
-
-      async function fetchUser() {
+      async function fetchData() {
         try {
-          const res = await fetch('http://localhost:9090/members/me', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (res.status === 401 || res.status === 403) return hardLogout();
-          if (!res.ok) throw new Error('Error al obtener datos del usuario');
-          const data = await res.json();
-          if (!abort) setUser(data);
-        } catch (err) {
-          if (!abort) setError(err.message);
-        }
-      }
+          const me = await resolveCurrentUser(token);
+          if (!me) return hardLogout();
+          setUser(me);
 
-      async function fetchMembers() {
-        try {
           const res = await fetch('http://localhost:9090/members', {
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -140,16 +120,27 @@
         }
       }
 
-      fetchUser();
-      fetchMembers();
+      fetchData();
 
       return () => { abort = true; };
     }, [token]);
 
+    const renderRegisterLink = () => {
+      if (user && user.role === 'ACADEMY_ADMIN' && user.academy && user.academy.id) {
+        const registerLink = `registrar-miembro.html?academyId=${user.academy.id}`;
+        return (
+            <p>
+              <a href={registerLink} className="btn">Registrar nuevo miembro</a>
+            </p>
+        );
+      }
+      return null;
+    };
+
     return (
         <div>
           <header>
-            <h2>Members</h2>
+            <h2>Member Dashboard</h2>
             <div
                 className={`user-menu ${menuOpen ? 'open' : ''}`}
                 onClick={() => setMenuOpen(!menuOpen)}
@@ -165,9 +156,9 @@
           </header>
 
           <main>
+            {renderRegisterLink()}
             {loading && <p>Cargando...</p>}
             {error && <p className="error">{error}</p>}
-
             {!loading && !error && (
                 <table>
                   <thead>
